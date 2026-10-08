@@ -534,8 +534,8 @@
       <table>
         <thead>
           <tr>
-            <th>Load ID</th>
-            <th>Date</th>
+            <th id="th-loadid">Load ID</th>
+            <th id="th-date">Date</th>
             <th class="num">Rate</th>
             <th class="num pct-col">Percentage</th>
             <th class="num">Charge</th>
@@ -610,15 +610,31 @@
     document.getElementById("mode-btn-dispatching").classList.toggle("active", mode === "dispatching");
     document.getElementById("mode-btn-eld").classList.toggle("active", mode === "eld");
     document.getElementById("period-label").textContent = mode === "eld" ? "Month:" : "Week:";
+    document.getElementById("th-loadid").textContent = mode === "eld" ? "Service" : "Load ID";
+    document.getElementById("th-date").textContent = mode === "eld" ? "Unit" : "Date";
+    document.getElementById("add-load").textContent = mode === "eld" ? "+ Add Service" : "+ Add Load";
+
+    loadRowsEl.querySelectorAll(".f-date").forEach(function (inp) {
+      if (mode === "eld") {
+        inp.type = "text";
+        inp.placeholder = "Unit #";
+      } else {
+        inp.type = "date";
+        inp.placeholder = "";
+      }
+    });
+
     recalc();
   }
 
   function makeLoadRow(data) {
     data = data || {};
     var tr = document.createElement("tr");
+    var dateType = mode === "eld" ? "text" : "date";
+    var datePlaceholder = mode === "eld" ? "Unit #" : "";
     tr.innerHTML =
       '<td><input type="text" class="f-loadid" placeholder="" value="" /></td>' +
-      '<td><input type="date" class="f-date" /></td>' +
+      '<td><input type="' + dateType + '" class="f-date" placeholder="' + datePlaceholder + '" /></td>' +
       '<td class="num"><input type="number" class="f-rate" placeholder="0.00" step="0.01" style="text-align:right" /></td>' +
       '<td class="num pct-col"><input type="number" class="f-pct" placeholder="0" step="0.1" style="text-align:right" /></td>' +
       '<td class="charge-cell f-charge">$0.00</td>' +
