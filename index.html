@@ -763,26 +763,17 @@
       var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
       if (!jsPDFCtor) throw new Error("pdf-library-unavailable");
 
-      var pdf = new jsPDFCtor({ unit: "pt", format: "letter" });
-      var pageWidth = pdf.internal.pageSize.getWidth();
-      var pageHeight = pdf.internal.pageSize.getHeight();
+      // One page, sized to the content: standard Letter width, height grows
+      // to fit however many load/deduction rows exist, so nothing ever
+      // spills to a second page or gets shrunk down.
+      var pageWidth = 612; // US Letter width in pt
       var margin = 24;
       var imgWidth = pageWidth - margin * 2;
       var imgHeight = (canvas.height * imgWidth) / canvas.width;
-      var usableHeight = pageHeight - margin * 2;
+      var pageHeight = imgHeight + margin * 2;
 
-      var heightLeft = imgHeight;
-      var offset = 0;
-
+      var pdf = new jsPDFCtor({ unit: "pt", format: [pageWidth, pageHeight] });
       pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
-      heightLeft -= usableHeight;
-
-      while (heightLeft > 0) {
-        offset += usableHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", margin, margin - offset, imgWidth, imgHeight);
-        heightLeft -= usableHeight;
-      }
 
       var blob = pdf.output("blob");
       var filename = buildFilename();
