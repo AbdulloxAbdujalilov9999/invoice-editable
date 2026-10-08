@@ -222,6 +222,96 @@
 
   body.mode-eld .pct-col { display: none; }
 
+  .month-picker { position: relative; display: inline-flex; }
+  .month-trigger {
+    font-family: inherit;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--band-ink);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(255,255,255,0.45);
+    padding: 3px 2px 5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 150px;
+    justify-content: center;
+  }
+  .month-trigger:focus {
+    outline: none;
+    border-bottom: 2px solid var(--focus);
+    padding-bottom: 4px;
+  }
+  .month-trigger .placeholder { color: rgba(255,255,255,0.7); font-weight: 500; }
+  .month-caret { font-size: 11px; opacity: 0.85; }
+
+  .month-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--sheet);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.2);
+    padding: 10px;
+    width: 220px;
+    z-index: 20;
+  }
+  .month-popover[hidden] { display: none; }
+  .month-popover-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .month-nav {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 3px 9px;
+    border-radius: 6px;
+  }
+  .month-nav:hover { background: var(--row-alt); color: var(--accent); }
+  .month-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .month-grid button {
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--fg);
+    background: var(--row-alt);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 8px 4px;
+    cursor: pointer;
+  }
+  .month-grid button:hover { border-color: var(--accent); }
+  .month-grid button.selected {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  /* Printed/exported PDF shows the chosen month as plain text, no picker chrome */
+  body.pdf-export .month-caret,
+  body.pdf-export .month-popover {
+    display: none !important;
+  }
+  body.pdf-export .month-trigger {
+    cursor: default;
+  }
+
   .table-wrap {
     overflow-x: auto;
     border: 1px solid var(--border);
@@ -526,7 +616,21 @@
         <input id="week-end" type="date" />
       </span>
       <span class="month-fields">
-        <input id="inv-month" type="month" />
+        <span class="month-picker">
+          <input type="hidden" id="inv-month" value="" />
+          <button type="button" class="month-trigger" id="month-trigger" aria-haspopup="true" aria-expanded="false">
+            <span id="month-trigger-label" class="placeholder">Select month</span>
+            <span class="month-caret" aria-hidden="true">&#9662;</span>
+          </button>
+          <div class="month-popover" id="month-popover" hidden>
+            <div class="month-popover-head">
+              <button type="button" class="month-nav" id="month-prev" aria-label="Previous year">&#8249;</button>
+              <span id="month-year-label"></span>
+              <button type="button" class="month-nav" id="month-next" aria-label="Next year">&#8250;</button>
+            </div>
+            <div class="month-grid" id="month-grid"></div>
+          </div>
+        </span>
       </span>
     </div>
 
@@ -603,6 +707,97 @@
   var loadRowsEl = document.getElementById("load-rows");
   var dedRowsEl = document.getElementById("ded-rows");
   var mode = "dispatching";
+
+  var MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+  var monthPickerYear = new Date().getFullYear();
+  var monthHiddenInput = document.getElementById("inv-month");
+  var monthTrigger = document.getElementById("month-trigger");
+  var monthTriggerLabel = document.getElementById("month-trigger-label");
+  var monthPopover = document.getElementById("month-popover");
+  var monthYearLabel = document.getElementById("month-year-label");
+  var monthGrid = document.getElementById("month-grid");
+
+  function parseMonthValue(value) {
+    if (!value) return null;
+    var parts = value.split("-");
+    var y = parseInt(parts[0], 10);
+    var m = parseInt(parts[1], 10) - 1;
+    if (isNaN(y) || isNaN(m) || m < 0 || m > 11) return null;
+    return { y: y, m: m };
+  }
+
+  function updateMonthTriggerLabel() {
+    var parsed = parseMonthValue(monthHiddenInput.value);
+    if (parsed) {
+      monthTriggerLabel.textContent = MONTH_NAMES[parsed.m] + " " + parsed.y;
+      monthTriggerLabel.classList.remove("placeholder");
+    } else {
+      monthTriggerLabel.textContent = "Select month";
+      monthTriggerLabel.classList.add("placeholder");
+    }
+  }
+
+  function renderMonthGrid() {
+    monthYearLabel.textContent = String(monthPickerYear);
+    var selected = parseMonthValue(monthHiddenInput.value);
+    monthGrid.innerHTML = "";
+    MONTH_NAMES.forEach(function (name, idx) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = name.slice(0, 3);
+      if (selected && selected.y === monthPickerYear && selected.m === idx) {
+        btn.classList.add("selected");
+      }
+      btn.addEventListener("click", function () {
+        var mm = idx + 1 < 10 ? "0" + (idx + 1) : String(idx + 1);
+        monthHiddenInput.value = monthPickerYear + "-" + mm;
+        updateMonthTriggerLabel();
+        closeMonthPopover();
+        recalc();
+      });
+      monthGrid.appendChild(btn);
+    });
+  }
+
+  function onDocClickCloseMonth(e) {
+    if (!monthPopover.contains(e.target) && e.target !== monthTrigger && !monthTrigger.contains(e.target)) {
+      closeMonthPopover();
+    }
+  }
+
+  function openMonthPopover() {
+    var parsed = parseMonthValue(monthHiddenInput.value);
+    monthPickerYear = parsed ? parsed.y : new Date().getFullYear();
+    renderMonthGrid();
+    monthPopover.hidden = false;
+    monthTrigger.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", onDocClickCloseMonth, true);
+    document.addEventListener("keydown", onMonthKeydown, true);
+  }
+
+  function closeMonthPopover() {
+    monthPopover.hidden = true;
+    monthTrigger.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDocClickCloseMonth, true);
+    document.removeEventListener("keydown", onMonthKeydown, true);
+  }
+
+  function onMonthKeydown(e) {
+    if (e.key === "Escape") closeMonthPopover();
+  }
+
+  monthTrigger.addEventListener("click", function () {
+    if (monthPopover.hidden) openMonthPopover(); else closeMonthPopover();
+  });
+  document.getElementById("month-prev").addEventListener("click", function () {
+    monthPickerYear -= 1;
+    renderMonthGrid();
+  });
+  document.getElementById("month-next").addEventListener("click", function () {
+    monthPickerYear += 1;
+    renderMonthGrid();
+  });
 
   function setMode(newMode) {
     mode = newMode === "eld" ? "eld" : "dispatching";
@@ -771,6 +966,7 @@
         if (data.top[id] != null) document.getElementById(id).value = data.top[id];
       });
     }
+    updateMonthTriggerLabel();
 
     if (data && data.loads && data.loads.length) {
       data.loads.forEach(function (l) { loadRowsEl.appendChild(makeLoadRow(l)); });
@@ -793,6 +989,7 @@
       var el = document.getElementById(id);
       el.value = id === "footer-note" ? "Thank you for your business!" : "";
     });
+    updateMonthTriggerLabel();
     loadRowsEl.innerHTML = "";
     dedRowsEl.innerHTML = "";
     for (var i = 0; i < 5; i++) loadRowsEl.appendChild(makeLoadRow());
@@ -843,6 +1040,7 @@
     btn.disabled = true;
     btn.textContent = "Preparing…";
     setStatus("");
+    closeMonthPopover();
 
     document.body.classList.add("pdf-export");
     await new Promise(function (resolve) {
