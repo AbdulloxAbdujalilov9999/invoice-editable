@@ -1,0 +1,822 @@
+<title>Dispatch Invoice Template</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /*
+    Layout concept: a letter-sized invoice sheet, fillable in place —
+    every piece of recorded data (names, dates, money, loads, deductions)
+    is an inline blank; only the row/column structure stays fixed.
+  */
+  :root {
+    --bg: #eef1f5;
+    --sheet: #ffffff;
+    --fg: #1a2433;
+    --muted: #5b6b80;
+    --faint: #93a1b3;
+    --accent: #1b3a63;
+    --accent-ink: #ffffff;
+    --border: #c9d2de;
+    --input-line: #aeb9c8;
+    --band: #1b3a63;
+    --band-ink: #ffffff;
+    --row-alt: #f4f7fa;
+    --danger: #b3432f;
+    --focus: #3a6ea8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11161f;
+      --sheet: #182130;
+      --fg: #e8edf4;
+      --muted: #9aa8bc;
+      --faint: #6a7890;
+      --accent: #6f9bd6;
+      --accent-ink: #0c1420;
+      --border: #30405a;
+      --input-line: #44566f;
+      --band: #253a57;
+      --band-ink: #eef3fa;
+      --row-alt: #1d2738;
+      --danger: #e08a74;
+      --focus: #8fb6e8;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11161f;
+    --sheet: #182130;
+    --fg: #e8edf4;
+    --muted: #9aa8bc;
+    --faint: #6a7890;
+    --accent: #6f9bd6;
+    --accent-ink: #0c1420;
+    --border: #30405a;
+    --input-line: #44566f;
+    --band: #253a57;
+    --band-ink: #eef3fa;
+    --row-alt: #1d2738;
+    --danger: #e08a74;
+    --focus: #8fb6e8;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    padding-inline: 16px;
+    padding-block: 32px;
+  }
+
+  .page {
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .toolbar .hint {
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .toolbar button {
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  .toolbar button:hover { border-color: var(--accent); }
+
+  .sheet {
+    background: var(--sheet);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: clamp(20px, 4vw, 44px);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  h1.doc-title {
+    font-family: "Sora", "IBM Plex Sans", sans-serif;
+    font-size: clamp(32px, 6vw, 44px);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--accent);
+    margin: 0 0 10px 0;
+    text-wrap: balance;
+  }
+
+  .meta-row {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .field label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  input[type="text"], input[type="date"], input[type="number"] {
+    font-family: inherit;
+    font-size: 14.5px;
+    color: var(--fg);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--input-line);
+    padding: 3px 2px 5px;
+    min-width: 0;
+  }
+  input::placeholder { color: var(--faint); }
+  input:focus {
+    outline: none;
+    border-bottom: 2px solid var(--focus);
+    padding-bottom: 4px;
+  }
+  input[type="number"] { font-variant-numeric: tabular-nums; }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
+
+  .blank-sm { width: 128px; }
+  .blank-md { width: 190px; }
+  .blank-lg { width: 260px; }
+
+  .parties {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    margin-bottom: 26px;
+  }
+  @media (max-width: 560px) {
+    .parties { grid-template-columns: 1fr; }
+  }
+  .party h2 {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 10px 0;
+  }
+  .party .field { margin-bottom: 10px; }
+  .party .field:last-child { margin-bottom: 0; }
+  .party input[type="text"] { width: 100%; }
+
+  .week-band {
+    background: var(--band);
+    color: var(--band-ink);
+    border-radius: 9px;
+    padding: 12px 18px;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 14.5px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .week-band input[type="date"] {
+    color: var(--band-ink);
+    border-bottom: 1px solid rgba(255,255,255,0.45);
+    font-weight: 600;
+    text-align: center;
+    width: 150px;
+  }
+  .week-band input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.8; }
+  :root[data-theme="light"] .week-band input[type="date"]::-webkit-calendar-picker-indicator,
+  :root:not([data-theme="dark"]) .week-band input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.8; }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    margin-bottom: 6px;
+  }
+  table { width: 100%; border-collapse: collapse; min-width: 560px; }
+  thead th {
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 10px 12px;
+  }
+  thead th.num, tbody td.num { text-align: right; }
+  tbody td {
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 14px;
+  }
+  tbody tr:nth-child(even) { background: var(--row-alt); }
+  tbody input[type="text"], tbody input[type="date"] { width: 100%; }
+  tbody input[type="number"] { width: 100%; text-align: right; }
+  td.charge-cell {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  td.row-remove { width: 32px; text-align: center; padding: 8px 6px; }
+  .row-remove button {
+    border: none;
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 5px;
+  }
+  .row-remove button:hover { color: var(--danger); background: var(--row-alt); }
+
+  .add-row-btn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    background: transparent;
+    border: 1px dashed var(--input-line);
+    border-radius: 7px;
+    padding: 8px 14px;
+    cursor: pointer;
+    margin: 10px 0 26px;
+  }
+  .add-row-btn:hover { border-color: var(--accent); }
+
+  .summary {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 20px;
+  }
+  .summary-box { width: min(340px, 100%); }
+  .summary-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-top: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .summary-line:first-child { border-top: none; }
+  .summary-line .amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .summary-line.total {
+    font-weight: 700;
+    font-size: 15.5px;
+    color: var(--accent);
+    border-top: 2px solid var(--accent);
+    margin-top: 4px;
+  }
+
+  .deductions-head {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 22px 0 10px;
+  }
+  .ded-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 28px;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 0;
+  }
+  .ded-row input[type="text"] { width: 100%; }
+  .ded-row input[type="number"] { width: 100%; text-align: right; }
+
+  .band-total {
+    background: var(--band);
+    color: var(--band-ink);
+    border-radius: 9px;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+    font-size: 15.5px;
+    margin-bottom: 28px;
+  }
+  .band-total .amt { font-variant-numeric: tabular-nums; font-size: 20px; }
+
+  .footer-line {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0 0 14px;
+  }
+  .footer-note {
+    width: 100%;
+    font-family: "Sora", "IBM Plex Sans", sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+    border: none;
+    background: transparent;
+    padding: 2px 0;
+  }
+  .footer-note:focus { outline: none; border-bottom: 2px solid var(--focus); }
+
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .toolbar button.primary {
+    color: var(--accent-ink);
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .toolbar button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .pdf-status {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* Forced-light, chrome-free rendering used only while a PDF is being captured */
+  body.pdf-export {
+    --bg: #ffffff;
+    --sheet: #ffffff;
+    --fg: #1a2433;
+    --muted: #5b6b80;
+    --faint: #93a1b3;
+    --accent: #1b3a63;
+    --accent-ink: #ffffff;
+    --border: #c9d2de;
+    --input-line: #8d98a8;
+    --band: #1b3a63;
+    --band-ink: #ffffff;
+    --row-alt: #f4f7fa;
+    --danger: #b3432f;
+    --focus: #3a6ea8;
+    color-scheme: light;
+  }
+  body.pdf-export .toolbar,
+  body.pdf-export .add-row-btn,
+  body.pdf-export .row-remove,
+  body.pdf-export .ded-remove {
+    display: none !important;
+  }
+  body.pdf-export .sheet { box-shadow: none; }
+  body.pdf-export input[type="number"]::-webkit-inner-spin-button,
+  body.pdf-export input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+    opacity: 0;
+  }
+  body.pdf-export input[type="number"] { -moz-appearance: textfield; }
+  body.pdf-export input[type="date"]::-webkit-calendar-picker-indicator {
+    display: none;
+  }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .toolbar { display: none; }
+    .sheet { border: none; box-shadow: none; }
+  }
+</style>
+
+<div class="page">
+  <div class="toolbar">
+    <span class="hint">Fillable template — type into any underlined blank. Your entries stay only in this browser.</span>
+    <div class="toolbar-actions">
+      <span class="pdf-status" id="pdf-status"></span>
+      <button id="reset-btn" type="button">Clear all fields</button>
+      <button id="download-pdf" class="primary" type="button">Download as PDF</button>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <h1 class="doc-title">INVOICE</h1>
+
+    <div class="meta-row">
+      <div class="field">
+        <label for="inv-date">Date</label>
+        <input id="inv-date" type="date" class="blank-sm" />
+      </div>
+      <div class="field">
+        <label for="inv-number">Invoice #</label>
+        <input id="inv-number" type="text" class="blank-sm" placeholder="0001" />
+      </div>
+    </div>
+
+    <div class="parties">
+      <div class="party">
+        <h2>Bill to</h2>
+        <div class="field">
+          <label for="bill-name">Company / Carrier name</label>
+          <input id="bill-name" type="text" placeholder="" />
+        </div>
+        <div class="field">
+          <label for="bill-phone">Phone</label>
+          <input id="bill-phone" type="text" placeholder="" />
+        </div>
+        <div class="field">
+          <label for="bill-address">Address</label>
+          <input id="bill-address" type="text" placeholder="" />
+        </div>
+      </div>
+      <div class="party">
+        <h2>From</h2>
+        <div class="field">
+          <label for="from-name">Dispatcher / company name</label>
+          <input id="from-name" type="text" placeholder="" />
+        </div>
+        <div class="field">
+          <label for="from-phone">Phone</label>
+          <input id="from-phone" type="text" placeholder="" />
+        </div>
+        <div class="field">
+          <label for="from-address">Address</label>
+          <input id="from-address" type="text" placeholder="" />
+        </div>
+      </div>
+    </div>
+
+    <div class="week-band">
+      <span>Week:</span>
+      <input id="week-start" type="date" />
+      <span>&ndash;</span>
+      <input id="week-end" type="date" />
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Load ID</th>
+            <th>Date</th>
+            <th class="num">Rate</th>
+            <th class="num">Percentage</th>
+            <th class="num">Charge</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="load-rows"></tbody>
+      </table>
+    </div>
+    <button class="add-row-btn" id="add-load" type="button">+ Add load</button>
+
+    <div class="summary">
+      <div class="summary-box">
+        <div class="summary-line">
+          <span>Loads subtotal</span>
+          <span class="amt" id="loads-subtotal">$0.00</span>
+        </div>
+        <div class="summary-line total">
+          <span>Total due</span>
+          <span class="amt" id="total-due">$0.00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="deductions-head">Deductions</div>
+    <div id="ded-rows"></div>
+    <button class="add-row-btn" id="add-ded" type="button">+ Add deduction</button>
+
+    <div class="summary">
+      <div class="summary-box">
+        <div class="summary-line">
+          <span>Deductions total</span>
+          <span class="amt" id="ded-total">$0.00</span>
+        </div>
+        <div class="summary-line total">
+          <span>Total paid</span>
+          <span class="amt" id="total-paid">$0.00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="band-total">
+      <span>Invoice for</span>
+      <span class="amt" id="band-amount">$0.00 USD</span>
+    </div>
+
+    <hr class="footer-line" />
+    <input class="footer-note" id="footer-note" type="text" value="Thank you for your business!" />
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "dispatch-invoice-template-v1";
+
+  function money(n) {
+    if (!isFinite(n)) n = 0;
+    return "$" + n.toFixed(2);
+  }
+
+  var loadRowsEl = document.getElementById("load-rows");
+  var dedRowsEl = document.getElementById("ded-rows");
+
+  function makeLoadRow(data) {
+    data = data || {};
+    var tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td><input type="text" class="f-loadid" placeholder="" value="" /></td>' +
+      '<td><input type="date" class="f-date" /></td>' +
+      '<td class="num"><input type="number" class="f-rate" placeholder="0.00" step="0.01" style="text-align:right" /></td>' +
+      '<td class="num"><input type="number" class="f-pct" placeholder="0" step="0.1" style="text-align:right" /></td>' +
+      '<td class="charge-cell f-charge">$0.00</td>' +
+      '<td class="row-remove"><button type="button" title="Remove row">&times;</button></td>';
+
+    tr.querySelector(".f-loadid").value = data.loadId || "";
+    tr.querySelector(".f-date").value = data.date || "";
+    tr.querySelector(".f-rate").value = data.rate != null ? data.rate : "";
+    tr.querySelector(".f-pct").value = data.pct != null ? data.pct : "";
+
+    tr.querySelectorAll("input").forEach(function (inp) {
+      inp.addEventListener("input", recalc);
+    });
+    tr.querySelector(".row-remove button").addEventListener("click", function () {
+      tr.remove();
+      recalc();
+    });
+    return tr;
+  }
+
+  function makeDedRow(data) {
+    data = data || {};
+    var row = document.createElement("div");
+    row.className = "ded-row";
+    row.innerHTML =
+      '<input type="text" class="f-label" placeholder="Deduction label" value="" />' +
+      '<input type="number" class="f-amt" placeholder="0.00" step="0.01" style="text-align:right" />' +
+      '<button type="button" class="ded-remove" title="Remove row" style="border:none;background:transparent;color:var(--faint);cursor:pointer;font-size:15px;">&times;</button>';
+
+    row.querySelector(".f-label").value = data.label || "";
+    row.querySelector(".f-amt").value = data.amt != null ? data.amt : "";
+
+    row.querySelectorAll("input").forEach(function (inp) {
+      inp.addEventListener("input", recalc);
+    });
+    row.querySelector("button").addEventListener("click", function () {
+      row.remove();
+      recalc();
+    });
+    return row;
+  }
+
+  function recalc() {
+    var loadsSubtotal = 0;
+    loadRowsEl.querySelectorAll("tr").forEach(function (tr) {
+      var rate = parseFloat(tr.querySelector(".f-rate").value) || 0;
+      var pct = parseFloat(tr.querySelector(".f-pct").value) || 0;
+      var charge = rate * (pct / 100);
+      tr.querySelector(".f-charge").textContent = money(charge);
+      loadsSubtotal += charge;
+    });
+    document.getElementById("loads-subtotal").textContent = money(loadsSubtotal);
+
+    var totalDue = loadsSubtotal;
+    document.getElementById("total-due").textContent = money(totalDue);
+
+    var dedTotal = 0;
+    dedRowsEl.querySelectorAll(".ded-row").forEach(function (row) {
+      dedTotal += parseFloat(row.querySelector(".f-amt").value) || 0;
+    });
+    document.getElementById("ded-total").textContent = money(dedTotal);
+
+    var totalPaid = totalDue - dedTotal;
+    document.getElementById("total-paid").textContent = money(totalPaid);
+    document.getElementById("band-amount").textContent = money(totalPaid) + " USD";
+
+    save();
+  }
+
+  document.getElementById("add-load").addEventListener("click", function () {
+    loadRowsEl.appendChild(makeLoadRow());
+    save();
+  });
+  document.getElementById("add-ded").addEventListener("click", function () {
+    dedRowsEl.appendChild(makeDedRow());
+    save();
+  });
+
+  var topFields = ["inv-date", "inv-number", "bill-name", "bill-phone", "bill-address",
+    "from-name", "from-phone", "from-address", "week-start", "week-end", "footer-note"];
+
+  topFields.forEach(function (id) {
+    document.getElementById(id).addEventListener("input", recalc);
+  });
+
+  function collect() {
+    var loads = [];
+    loadRowsEl.querySelectorAll("tr").forEach(function (tr) {
+      loads.push({
+        loadId: tr.querySelector(".f-loadid").value,
+        date: tr.querySelector(".f-date").value,
+        rate: tr.querySelector(".f-rate").value,
+        pct: tr.querySelector(".f-pct").value
+      });
+    });
+    var deds = [];
+    dedRowsEl.querySelectorAll(".ded-row").forEach(function (row) {
+      deds.push({
+        label: row.querySelector(".f-label").value,
+        amt: row.querySelector(".f-amt").value
+      });
+    });
+    var top = {};
+    topFields.forEach(function (id) {
+      top[id] = document.getElementById(id).value;
+    });
+    return { top: top, loads: loads, deds: deds };
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(collect()));
+    } catch (e) {}
+  }
+
+  function load() {
+    var data = null;
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) data = JSON.parse(raw);
+    } catch (e) {}
+
+    if (data && data.top) {
+      topFields.forEach(function (id) {
+        if (data.top[id] != null) document.getElementById(id).value = data.top[id];
+      });
+    }
+
+    if (data && data.loads && data.loads.length) {
+      data.loads.forEach(function (l) { loadRowsEl.appendChild(makeLoadRow(l)); });
+    } else {
+      for (var i = 0; i < 5; i++) loadRowsEl.appendChild(makeLoadRow());
+    }
+
+    if (data && data.deds && data.deds.length) {
+      data.deds.forEach(function (d) { dedRowsEl.appendChild(makeDedRow(d)); });
+    } else {
+      for (var j = 0; j < 2; j++) dedRowsEl.appendChild(makeDedRow());
+    }
+
+    recalc();
+  }
+
+  document.getElementById("reset-btn").addEventListener("click", function () {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    topFields.forEach(function (id) {
+      var el = document.getElementById(id);
+      el.value = id === "footer-note" ? "Thank you for your business!" : "";
+    });
+    loadRowsEl.innerHTML = "";
+    dedRowsEl.innerHTML = "";
+    for (var i = 0; i < 5; i++) loadRowsEl.appendChild(makeLoadRow());
+    for (var j = 0; j < 2; j++) dedRowsEl.appendChild(makeDedRow());
+    recalc();
+  });
+
+  function setStatus(msg, timeout) {
+    var el = document.getElementById("pdf-status");
+    el.textContent = msg || "";
+    if (timeout) {
+      setTimeout(function () {
+        if (el.textContent === msg) el.textContent = "";
+      }, timeout);
+    }
+  }
+
+  function buildFilename() {
+    var num = document.getElementById("inv-number").value.trim();
+    var base = num ? "invoice-" + num : "dispatch-invoice";
+    return base.replace(/[^a-z0-9-]+/gi, "-") + ".pdf";
+  }
+
+  async function getDownloadsCapability() {
+    try {
+      if (window.claude && typeof window.claude.use === "function") {
+        return await window.claude.use("downloads");
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function fallbackBrowserDownload(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  async function downloadPdf() {
+    var btn = document.getElementById("download-pdf");
+    if (btn.disabled) return;
+    var originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Preparing…";
+    setStatus("");
+
+    document.body.classList.add("pdf-export");
+    await new Promise(function (resolve) {
+      requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+    });
+
+    try {
+      var sheet = document.querySelector(".sheet");
+      var canvas = await html2canvas(sheet, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true
+      });
+      var imgData = canvas.toDataURL("image/png");
+
+      var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+      if (!jsPDFCtor) throw new Error("pdf-library-unavailable");
+
+      var pdf = new jsPDFCtor({ unit: "pt", format: "letter" });
+      var pageWidth = pdf.internal.pageSize.getWidth();
+      var pageHeight = pdf.internal.pageSize.getHeight();
+      var margin = 24;
+      var imgWidth = pageWidth - margin * 2;
+      var imgHeight = (canvas.height * imgWidth) / canvas.width;
+      var usableHeight = pageHeight - margin * 2;
+
+      var heightLeft = imgHeight;
+      var offset = 0;
+
+      pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
+      heightLeft -= usableHeight;
+
+      while (heightLeft > 0) {
+        offset += usableHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", margin, margin - offset, imgWidth, imgHeight);
+        heightLeft -= usableHeight;
+      }
+
+      var blob = pdf.output("blob");
+      var filename = buildFilename();
+
+      var downloads = await getDownloadsCapability();
+      if (downloads) {
+        try {
+          await downloads.save({ filename: filename, data: blob });
+          setStatus("Saved.", 3000);
+        } catch (err) {
+          if (err && err.code === "declined") {
+            setStatus("");
+          } else if (err && err.code === "unavailable") {
+            fallbackBrowserDownload(blob, filename);
+            setStatus("Downloaded.", 3000);
+          } else {
+            setStatus("Couldn't save the file — try again.", 4000);
+          }
+        }
+      } else {
+        fallbackBrowserDownload(blob, filename);
+        setStatus("Downloaded.", 3000);
+      }
+    } catch (err) {
+      setStatus("PDF generation failed — try again.", 4000);
+    } finally {
+      document.body.classList.remove("pdf-export");
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  }
+
+  document.getElementById("download-pdf").addEventListener("click", downloadPdf);
+
+  load();
+})();
+</script>
