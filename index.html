@@ -197,16 +197,30 @@
     margin-bottom: 20px;
     flex-wrap: wrap;
   }
-  .week-band input[type="date"] {
+  .week-band input[type="date"], .week-band input[type="month"] {
     color: var(--band-ink);
     border-bottom: 1px solid rgba(255,255,255,0.45);
     font-weight: 600;
     text-align: center;
     width: 150px;
   }
-  .week-band input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.8; }
+  .week-band input[type="date"]::-webkit-calendar-picker-indicator,
+  .week-band input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.8; }
   :root[data-theme="light"] .week-band input[type="date"]::-webkit-calendar-picker-indicator,
-  :root:not([data-theme="dark"]) .week-band input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.8; }
+  :root:not([data-theme="dark"]) .week-band input[type="date"]::-webkit-calendar-picker-indicator,
+  :root[data-theme="light"] .week-band input[type="month"]::-webkit-calendar-picker-indicator,
+  :root:not([data-theme="dark"]) .week-band input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.8; }
+
+  .week-fields, .month-fields {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .month-fields { display: none; }
+  body.mode-eld .week-fields { display: none; }
+  body.mode-eld .month-fields { display: inline-flex; }
+
+  body.mode-eld .pct-col { display: none; }
 
   .table-wrap {
     overflow-x: auto;
@@ -360,6 +374,42 @@
     color: var(--muted);
   }
 
+  .mode-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .mode-bar .mode-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .seg-btn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--sheet);
+    border: none;
+    padding: 7px 16px;
+    cursor: pointer;
+  }
+  .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+  .seg-btn.active {
+    color: var(--accent-ink);
+    background: var(--accent);
+  }
+
   /* Forced-light, chrome-free rendering used only while a PDF is being captured */
   body.pdf-export {
     --bg: #ffffff;
@@ -404,6 +454,14 @@
 </style>
 
 <div class="page">
+  <div class="mode-bar">
+    <span class="mode-label">Invoice type</span>
+    <div class="segmented" role="group" aria-label="Invoice type">
+      <button type="button" class="seg-btn active" id="mode-btn-dispatching" data-mode="dispatching">Dispatching</button>
+      <button type="button" class="seg-btn" id="mode-btn-eld" data-mode="eld">ELD</button>
+    </div>
+  </div>
+
   <div class="toolbar">
     <span class="hint">Fillable template — type into any underlined blank. Your entries stay only in this browser.</span>
     <div class="toolbar-actions">
@@ -461,10 +519,15 @@
     </div>
 
     <div class="week-band">
-      <span>Week:</span>
-      <input id="week-start" type="date" />
-      <span>&ndash;</span>
-      <input id="week-end" type="date" />
+      <span id="period-label">Week:</span>
+      <span class="week-fields">
+        <input id="week-start" type="date" />
+        <span>&ndash;</span>
+        <input id="week-end" type="date" />
+      </span>
+      <span class="month-fields">
+        <input id="inv-month" type="month" />
+      </span>
     </div>
 
     <div class="table-wrap">
@@ -474,7 +537,7 @@
             <th>Load ID</th>
             <th>Date</th>
             <th class="num">Rate</th>
-            <th class="num">Percentage</th>
+            <th class="num pct-col">Percentage</th>
             <th class="num">Charge</th>
             <th></th>
           </tr>
@@ -539,6 +602,16 @@
 
   var loadRowsEl = document.getElementById("load-rows");
   var dedRowsEl = document.getElementById("ded-rows");
+  var mode = "dispatching";
+
+  function setMode(newMode) {
+    mode = newMode === "eld" ? "eld" : "dispatching";
+    document.body.classList.toggle("mode-eld", mode === "eld");
+    document.getElementById("mode-btn-dispatching").classList.toggle("active", mode === "dispatching");
+    document.getElementById("mode-btn-eld").classList.toggle("active", mode === "eld");
+    document.getElementById("period-label").textContent = mode === "eld" ? "Month:" : "Week:";
+    recalc();
+  }
 
   function makeLoadRow(data) {
     data = data || {};
@@ -547,7 +620,7 @@
       '<td><input type="text" class="f-loadid" placeholder="" value="" /></td>' +
       '<td><input type="date" class="f-date" /></td>' +
       '<td class="num"><input type="number" class="f-rate" placeholder="0.00" step="0.01" style="text-align:right" /></td>' +
-      '<td class="num"><input type="number" class="f-pct" placeholder="0" step="0.1" style="text-align:right" /></td>' +
+      '<td class="num pct-col"><input type="number" class="f-pct" placeholder="0" step="0.1" style="text-align:right" /></td>' +
       '<td class="charge-cell f-charge">$0.00</td>' +
       '<td class="row-remove"><button type="button" title="Remove row">&times;</button></td>';
 
@@ -592,7 +665,7 @@
     var loadsSubtotal = 0;
     loadRowsEl.querySelectorAll("tr").forEach(function (tr) {
       var rate = parseFloat(tr.querySelector(".f-rate").value) || 0;
-      var pct = parseFloat(tr.querySelector(".f-pct").value) || 0;
+      var pct = mode === "eld" ? 100 : (parseFloat(tr.querySelector(".f-pct").value) || 0);
       var charge = rate * (pct / 100);
       tr.querySelector(".f-charge").textContent = money(charge);
       loadsSubtotal += charge;
@@ -625,7 +698,16 @@
   });
 
   var topFields = ["inv-date", "inv-number", "bill-name", "bill-phone", "bill-address",
-    "from-name", "from-phone", "from-address", "week-start", "week-end", "footer-note"];
+    "from-name", "from-phone", "from-address", "week-start", "week-end", "inv-month", "footer-note"];
+
+  document.getElementById("mode-btn-dispatching").addEventListener("click", function () {
+    setMode("dispatching");
+    save();
+  });
+  document.getElementById("mode-btn-eld").addEventListener("click", function () {
+    setMode("eld");
+    save();
+  });
 
   topFields.forEach(function (id) {
     document.getElementById(id).addEventListener("input", recalc);
@@ -652,7 +734,7 @@
     topFields.forEach(function (id) {
       top[id] = document.getElementById(id).value;
     });
-    return { top: top, loads: loads, deds: deds };
+    return { top: top, loads: loads, deds: deds, mode: mode };
   }
 
   function save() {
@@ -686,7 +768,7 @@
       for (var j = 0; j < 2; j++) dedRowsEl.appendChild(makeDedRow());
     }
 
-    recalc();
+    setMode(data && data.mode ? data.mode : "dispatching");
   }
 
   document.getElementById("reset-btn").addEventListener("click", function () {
@@ -699,7 +781,7 @@
     dedRowsEl.innerHTML = "";
     for (var i = 0; i < 5; i++) loadRowsEl.appendChild(makeLoadRow());
     for (var j = 0; j < 2; j++) dedRowsEl.appendChild(makeDedRow());
-    recalc();
+    setMode("dispatching");
   });
 
   function setStatus(msg, timeout) {
